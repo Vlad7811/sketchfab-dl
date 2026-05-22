@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Sketchfab Downloader</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;900&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0a0a0f;
+    --panel: #0f0f18;
+    --border: #1c1c2e;
+    --accent: #00e5ff;
+    --green: #00ff88;
+    --text: #e0e0f0;
+    --muted: #44445a;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Titlebar */
+  .titlebar {
+    height: 42px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 10px;
+    -webkit-app-region: drag;
+    flex-shrink: 0;
+  }
+  .win-controls {
+    display: flex; gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+  .win-btn {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: none; cursor: pointer;
+    transition: filter 0.15s;
+  }
+  .win-btn:hover { filter: brightness(1.3); }
+  .win-btn.close  { background: #ff5f57; }
+  .win-btn.min    { background: #febc2e; }
+  .win-btn.max    { background: #28c840; }
+  .app-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 900; font-size: 13px;
+    letter-spacing: 2px; color: var(--accent);
+    -webkit-app-region: no-drag;
+  }
+
+  /* URL bar */
+  .urlbar {
+    height: 52px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 14px; gap: 10px;
+    flex-shrink: 0;
+  }
+  .url-label {
+    font-size: 10px; color: var(--muted);
+    letter-spacing: 1px; white-space: nowrap;
+  }
+  #urlInput {
+    flex: 1;
+    background: #14141f;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    padding: 8px 14px;
+    outline: none;
+    user-select: text;
+    transition: border-color 0.2s;
+  }
+  #urlInput:focus { border-color: var(--accent); }
+  #urlInput::placeholder { color: var(--muted); }
+  #loadBtn {
+    background: var(--accent); border: none; border-radius: 7px;
+    color: #000; font-family: 'Syne', sans-serif;
+    font-weight: 700; font-size: 12px;
+    padding: 8px 20px; cursor: pointer;
+    transition: all 0.18s; white-space: nowrap;
+  }
+  #loadBtn:hover { background: #33ecff; }
+
+  /* Webview */
+  .viewer { flex: 1; position: relative; background: #050508; }
+  webview { width: 100%; height: 100%; display: block; }
+
+  .placeholder {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; pointer-events: none;
+  }
+  .placeholder-icon { font-size: 48px; opacity: 0.06; }
+  .placeholder-text { font-size: 12px; color: var(--muted); text-align: center; line-height: 2; }
+
+  /* Bottom bar */
+  .bottombar {
+    height: 62px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px; gap: 14px;
+    flex-shrink: 0;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
+  .status-dot.ready   { background: var(--green); box-shadow: 0 0 8px rgba(0,255,136,0.5); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .model-info { flex: 1; overflow: hidden; }
+  .model-name {
+    font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .model-hint { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  #dlBtn {
+    background: var(--green); border: none; border-radius: 8px;
+    color: #000; font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 13px;
+    padding: 12px 28px; cursor: pointer;
+    transition: all 0.2s; min-width: 190px;
+    opacity: 0.35; pointer-events: none;
+  }
+  #dlBtn.active { opacity: 1; pointer-events: all; }
+  #dlBtn.active:hover { background: #33ffaa; box-shadow: 0 0 20px rgba(0,255,136,0.3); }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="win-controls">
+    <button class="win-btn close"  onclick="ipc('close')"></button>
+    <button class="win-btn min"    onclick="ipc('minimize')"></button>
+    <button class="win-btn max"    onclick="ipc('maximize')"></button>
+  </div>
+  <div class="app-title">SKETCHFAB DL</div>
+</div>
+
+<div class="urlbar">
+  <span class="url-label">URL //</span>
+  <input id="urlInput" type="text"
+    placeholder="https://sketchfab.com/3d-models/..."
+    autocomplete="off" spellcheck="false"/>
+  <button id="loadBtn" onclick="loadModel()">Загрузить</button>
+</div>
+
+<div class="viewer" id="viewer">
+  <div class="placeholder" id="placeholder">
+    <div class="placeholder-icon">⬡</div>
+    <div class="placeholder-text">Вставь ссылку на модель Sketchfab<br>и нажми «Загрузить»</div>
+  </div>
+  <webview id="wv" style="display:none"
+    allowpopups
+    webpreferences="nodeIntegration=yes, contextIsolation=no"
+  ></webview>
+</div>
+
+<div class="bottombar">
+  <div class="status-dot" id="dot"></div>
+  <div class="model-info">
+    <div class="model-name" id="modelName">Модель не выбрана</div>
+    <div class="model-hint" id="modelHint">Загрузи ссылку выше</div>
+  </div>
+  <button id="dlBtn" onclick="doDownload()">⬇ СКАЧАТЬ (0 объектов)</button>
+</div>
+
+<script>
+const { ipcRenderer } = require('electron');
+const path = require('path');
+const os = require('os');
+
+const wv = document.getElementById('wv');
+const urlInput = document.getElementById('urlInput');
+const dlBtn = document.getElementById('dlBtn');
+const dot = document.getElementById('dot');
+const modelName = document.getElementById('modelName');
+const modelHint = document.getElementById('modelHint');
+const placeholder = document.getElementById('placeholder');
+
+function ipc(ch) { ipcRenderer.send(ch); }
+
+// Listen for model count updates from preload
+ipcRenderer.on('model-count', (e, count) => {
+  dlBtn.textContent = `⬇ СКАЧАТЬ (${count} объектов)`;
+  if (count > 0) {
+    dlBtn.classList.add('active');
+    modelHint.textContent = `Захвачено объектов: ${count} — можно скачивать`;
+    dot.className = 'status-dot ready';
+  }
+});
+
+ipcRenderer.on('patch-status', (e, count) => {
+  console.log('Patched:', count, 'places');
+  if (count > 0) modelHint.textContent = 'Скрипт инжектирован, ожидаю геометрию...';
+});
+
+ipcRenderer.on('dl-status', (e, status) => {
+  if (status === 'jszip_not_ready') modelHint.textContent = 'JSZip ещё загружается, подожди...';
+  if (status === 'empty') modelHint.textContent = 'Объекты не захвачены — подожди загрузки модели';
+});
+
+ipcRenderer.on('save-done', (e, filePath) => {
+  modelHint.textContent = `Сохранено: ${filePath}`;
+  dot.className = 'status-dot ready';
+});
+
+function loadModel() {
+  const url = urlInput.value.trim();
+  if (!url || !url.includes('sketchfab.com')) {
+    modelHint.textContent = 'Введи корректную ссылку Sketchfab';
+    return;
+  }
+
+  placeholder.style.display = 'none';
+  wv.style.display = 'block';
+  dlBtn.classList.remove('active');
+  dlBtn.textContent = '⬇ СКАЧАТЬ (0 объектов)';
+  dot.className = 'status-dot loading';
+  modelName.textContent = 'Загрузка...';
+  modelHint.textContent = url;
+
+  // Set preload BEFORE loading URL
+  wv.setAttribute('preload', `file://${path.join(__dirname, 'preload.js')}`);
+  wv.setAttribute('src', url);
+}
+
+wv.addEventListener('did-stop-loading', () => {
+  dot.className = 'status-dot loading';
+  // Get page title
+  wv.executeJavaScript(
+    "document.querySelector('.model-name__label') ? document.querySelector('.model-name__label').textContent.trim() : document.title"
+  ).then(name => {
+    if (name) modelName.textContent = name;
+    modelHint.textContent = 'Ожидаю захвата геометрии... (прокрути модель)';
+  }).catch(() => {});
+});
+
+wv.addEventListener('did-fail-load', (e) => {
+  if (e.errorCode === -3) return;
+  modelHint.textContent = 'Ошибка загрузки страницы';
+  dot.className = 'status-dot';
+});
+
+function doDownload() {
+  wv.executeJavaScript('window.__doDownload ? window.__doDownload() : "not_ready"')
+    .then(r => {
+      if (r === 'not_ready') modelHint.textContent = 'Скрипт не загружен';
+      else if (r === 'empty') modelHint.textContent = 'Объекты не захвачены — подожди';
+      else modelHint.textContent = 'Упаковываю архив...';
+    });
+}
+
+urlInput.addEventListener('keydown', e => { if (e.key === 'Enter') loadModel(); });
+</script>
+</body>
+</html>
